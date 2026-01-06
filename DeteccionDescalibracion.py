@@ -20,9 +20,9 @@ UMBRAL = 0.02  # °C aceptables
 df['descalibrado'] = df['residual_mean'].abs() > UMBRAL
 
 if df['descalibrado'].any():
-    print("⚠️ ALERTA: Se detectó des-calibración en el sensor.")
+    print("ALERTA: Se detectó des-calibración en el sensor.")
 else:
-    print("✅ Sensor dentro de tolerancias.")
+    print("Sensor dentro de tolerancias.")
 
 print("Cálculo de des-calibración completado.")
 print("Primeras filas de residual_mean y descalibrado:")
