@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import filedialog
-import os
+import os 
 
 # -------- LIMPIAR CONSOLA --------
 os.system('cls' if os.name == 'nt' else 'clear')
