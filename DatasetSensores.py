@@ -3,7 +3,7 @@ import numpy as np
 import os
 
 # -------- CONFIGURACIÓN. --------
-archivo_csv = 'Dataset_Termopar_Tipo_k.csv'  # <-- pon aquí el nombre real del archivo
+archivo_csv = 'Temperaturas_termopares_inyeccion_plastico_realista.csv'  # <-- pon aquí el nombre real del archivo
 columna_referencia = 'Tref(°C)'
 sensores = [
     'Tsensor1_K(°C)',

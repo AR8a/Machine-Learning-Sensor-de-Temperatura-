@@ -2,7 +2,7 @@ from sklearn.linear_model import LinearRegression
 import pandas as pd
 import matplotlib.pyplot as plt
 
-df = pd.read_csv('Dataset_Termopar_Tipo_k.csv')
+df = pd.read_csv('Temperaturas_termopares_inyeccion_plastico_realista.csv')
 sensor = 'Tsensor1_K(°C)'
 
 x = df[[sensor]]
