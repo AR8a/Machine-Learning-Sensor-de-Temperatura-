@@ -1,48 +1,141 @@
-from sklearn.linear_model import LinearRegression
 import pandas as pd
+import numpy as np
+import pickle
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import OneClassSVM
+
 import matplotlib.pyplot as plt
 
-df = pd.read_csv('Temperaturas_termopares_inyeccion_plastico_realista.csv', encoding='latin1')
-sensor = 'Tsensor1_K(°C)'
+# ===============================
+# PARTE A — ENTRENAMIENTO
+# ===============================
 
-x = df[[sensor]]
-y = df['Tref(°C)']
+def entrenar_y_guardar_modelo(ruta_csv,
+                              nombre_modelo="model_descalibracion.pkl",
+                              nombre_scaler="scaler_descalibracion.pkl",
+                              nombre_media="mean_sensors.pkl"):
+    print("📌 Cargando dataset para entrenamiento...")
+    df = pd.read_csv(ruta_csv)
 
-modelo_calibracion = LinearRegression()
-modelo_calibracion.fit(x,y)
+    temp_cols = [col for col in df.columns if "TMP" in col and "R_SHTHTR" in col]
+    print(f"🔎 Columnas de temperatura detectadas: {temp_cols}")
 
-df['temperatura_estimada'] = modelo_calibracion.predict(x)
-df['residual'] = df['temperatura_estimada'] - df['Tref(°C)']
-df['residual_mean'] = df['residual'].rolling(window=100, min_periods = 1).mean()
-df['residual_std']  = df['residual'].rolling(window=100, min_periods = 1).std()
+    data = df[temp_cols].copy()
+    data = data.fillna(data.mean())
 
-UMBRAL = 0.02  # °C aceptables
-df['descalibrado'] = df['residual_mean'].abs() > UMBRAL
+    mean_per_sensor = data.mean()
+    data_dev = data - mean_per_sensor
 
-if df['descalibrado'].any():
-    print("ALERTA: Se detectó des-calibración en el sensor.")
-else:
-    print("Sensor dentro de tolerancias.")
+    scaler = StandardScaler()
+    data_dev_scaled = scaler.fit_transform(data_dev)
 
-print("Cálculo de des-calibración completado.")
-print("Primeras filas de residual_mean y descalibrado:")
-print(df[['residual_mean','descalibrado']].head())
+    model = OneClassSVM(kernel="rbf", gamma="auto", nu=0.05)
+    model.fit(data_dev_scaled)
 
-print("=== Resumen del modelo de calibración ===")
-print("Coeficiente (a):", modelo_calibracion.coef_[0])
-print("Intercept (b):", modelo_calibracion.intercept_)
-print("Score (R²):", modelo_calibracion.score(x, y))
+    pickle.dump(model, open(nombre_modelo, "wb"))
+    pickle.dump(scaler, open(nombre_scaler, "wb"))
+    pickle.dump(mean_per_sensor, open(nombre_media, "wb"))
 
+    print("✔ Modelo entrenado y parámetros guardados.")
 
-# Mostrar gráfico
-plt.figure(figsize=(10,5))
-plt.plot(df['residual_mean'], label='Residual promedio')
-plt.axhline(UMBRAL, color='red', linestyle='--', label=f'Umbral +{UMBRAL}')
-plt.axhline(-UMBRAL, color='red', linestyle='--', label=f'Umbral -{UMBRAL}')
-plt.title("Residual promedio con umbrales de tolerancia")
-plt.xlabel("Índice de muestra")
-plt.ylabel("Residual promedio (°C)")
-plt.legend()
-plt.grid()
-plt.show()
+    # =====================
+    # GRAFICA DEL ENTRENAMIENTO
+    # =====================
+    pred_train = model.predict(data_dev_scaled)
+    anomalies_train = np.where(pred_train == -1)[0]
 
+    plt.figure(figsize=(12,6))
+    plt.title("🟦 Entrenamiento - Detección de des-calibración (datos históricos)")
+    plt.plot(df.index, data[temp_cols[0]], label=temp_cols[0], color="blue")
+    plt.scatter(df.index[anomalies_train],
+                data[temp_cols[0]].iloc[anomalies_train],
+                color="red", marker="x", label="Puntos des-calibrados", alpha=0.6)
+    plt.xlabel("Ciclo de inyección")
+    plt.ylabel("Temperatura (°C)")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# ===============================
+# PARTE B — USAR EL MODELO
+# ===============================
+
+model = None
+scaler = None
+mean_per_sensor = None
+
+def cargar_modelo(nombre_modelo="model_descalibracion.pkl",
+                  nombre_scaler="scaler_descalibracion.pkl",
+                  nombre_media="mean_sensors.pkl"):
+    global model, scaler, mean_per_sensor
+
+    model = pickle.load(open(nombre_modelo, "rb"))
+    scaler = pickle.load(open(nombre_scaler, "rb"))
+    mean_per_sensor = pickle.load(open(nombre_media, "rb"))
+
+    print("📌 Modelo, scaler y medias cargados.")
+
+def detectar_descalibracion(nueva_lectura, mostrar_grafica=False):
+    if model is None or scaler is None or mean_per_sensor is None:
+        raise RuntimeError("❌ Modelo no cargado. Usa cargar_modelo() primero.")
+
+    df_new = pd.DataFrame([nueva_lectura])
+    df_new = df_new.fillna(mean_per_sensor)
+    df_new = df_new[mean_per_sensor.index]
+
+    df_dev_new = df_new - mean_per_sensor
+    X_scaled_new = scaler.transform(df_dev_new)
+    pred = model.predict(X_scaled_new)[0]
+
+    if mostrar_grafica:
+        plt.figure(figsize=(8,4))
+        plt.title("📊 Lectura nueva de temperatura")
+        plt.plot(df_new.columns, df_new.values.flatten(), 'o-', label="Temp observada")
+        plt.axhline(mean_per_sensor.values.mean(), color="black", linestyle="--", label="Media histórica (promedio)")
+        plt.xticks(rotation=90)
+        plt.ylabel("°C")
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+
+    return True if pred == -1 else False
+
+# ===============================
+# BLOQUE PRINCIPAL: ENTRENAR + EJEMPLO
+# ===============================
+
+if __name__ == "__main__":
+    print("\n--- ENTRENANDO MODELO ---")
+    entrenar_y_guardar_modelo("molding_machine.csv")
+
+    print("\n--- CARGANDO MODELO ENTRENADO ---")
+    cargar_modelo()
+
+    print("\n--- PROBANDO UNA NUEVA LECTURA ---")
+
+    ejemplo = {
+        "R_SHTHTR01TMP": 219.9, "R_SHTHTR02TMP": 220.1,
+        "R_SHTHTR03TMP": 220.2, "R_SHTHTR04TMP": 219.7,
+        "R_SHTHTR05TMP": 220.0, "R_SHTHTR06TMP": 220.3,
+        "R_SHTHTR07TMP": 219.8, "R_SHTHTR08TMP": 220.1,
+        "R_SHTHTR09TMP": 220.0, "R_SHTHTR10TMP": 220.2,
+        "R_SHTHTR11TMP": 220.1, "R_SHTHTR12TMP": 220.0,
+        "R_SHTHTR13TMP": 220.3, "R_SHTHTR14TMP": 219.9,
+        "R_SHTHTR15TMP": 220.0, "R_SHTHTR16TMP": 220.1,
+        "R_SHTHTR17TMP": 220.2, "R_SHTHTR18TMP": 220.0,
+        "R_SHTHTR19TMP": 220.1, "R_SHTHTR20TMP": 220.1,
+        "R_SHTHTR21TMP": 220.0, "R_SHTHTR22TMP": 220.2,
+        "R_SHTHTR23TMP": 219.8, "R_SHTHTR24TMP": 220.0,
+        "R_SHTHTR25TMP": 220.1, "R_SHTHTR26TMP": 220.4,
+        "R_SHTHTR27TMP": 220.0, "R_SHTHTR28TMP": 220.2,
+        "R_SHTHTR29TMP": 220.1, "R_SHTHTR30TMP": 220.0,
+        "R_SHTHTR31TMP": 220.3, "R_SHTHTR32TMP": 219.9,
+        "R_SHTHTR33TMP": 220.0
+    }
+
+    alerta = detectar_descalibracion(ejemplo, mostrar_grafica=True)
+    if alerta:
+        print("🚨 ALERTA: Posible des-calibración detectada.")
+    else:
+        print("✔ Lectura normal.")
