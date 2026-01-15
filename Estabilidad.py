@@ -6,9 +6,7 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import OneClassSVM
 
-# ===============================
-# 1️⃣ ENTRENAMIENTO
-# ===============================
+# ENTRENAMIENTO
 
 def entrenar_modelo_estabilidad(ruta_csv="molding_machine.csv",
                                 model_file="model_est_sensor.pkl",
@@ -44,10 +42,7 @@ def entrenar_modelo_estabilidad(ruta_csv="molding_machine.csv",
 
     print("✅ Modelo de estabilidad entrenado y guardado.")
 
-
-# ===============================
-# 2️⃣ CARGAR MODELO
-# ===============================
+# CARGAR MODELO
 
 def cargar_modelo_estabilidad(model_file="model_est_sensor.pkl",
                               scaler_file="scaler_est_sensor.pkl",
@@ -60,10 +55,7 @@ def cargar_modelo_estabilidad(model_file="model_est_sensor.pkl",
     temp_cols = pickle.load(open(mean_file, "rb"))
     return model, scaler, temp_cols
 
-
-# ===============================
 # 3️⃣ EVALUAR NUEVA LECTURA
-# ===============================
 
 def evaluar_estabilidad(lectura, model, scaler, temp_cols):
     """
@@ -88,10 +80,7 @@ def evaluar_estabilidad(lectura, model, scaler, temp_cols):
 
     return pred
 
-
-# ===============================
-# 4️⃣ MOSTRAR GRAFICA Y ALERTA
-# ===============================
+# MOSTRAR GRAFICA Y ALERTA
 
 def mostrar_grafica_estabilidad(lectura, temp_cols):
     """
@@ -109,10 +98,7 @@ def mostrar_grafica_estabilidad(lectura, temp_cols):
     plt.legend()
     plt.show()
 
-
-# ===============================
-# 5️⃣ BLOQUE PRINCIPAL
-# ===============================
+# BLOQUE PRINCIPAL
 
 if __name__ == "__main__":
     print("\n--- Entrenando modelo de estabilidad ---")

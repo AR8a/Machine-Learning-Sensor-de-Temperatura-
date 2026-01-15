@@ -7,9 +7,7 @@ from sklearn.svm import OneClassSVM
 
 import matplotlib.pyplot as plt
 
-# ===============================
 # PARTE A — ENTRENAMIENTO
-# ===============================
 
 def entrenar_y_guardar_modelo(ruta_csv,
                               nombre_modelo="model_descalibracion.pkl",
@@ -39,9 +37,8 @@ def entrenar_y_guardar_modelo(ruta_csv,
 
     print("✔ Modelo entrenado y parámetros guardados.")
 
-    # =====================
     # GRAFICA DEL ENTRENAMIENTO
-    # =====================
+
     pred_train = model.predict(data_dev_scaled)
     anomalies_train = np.where(pred_train == -1)[0]
 
@@ -57,9 +54,7 @@ def entrenar_y_guardar_modelo(ruta_csv,
     plt.grid(True)
     plt.show()
 
-# ===============================
 # PARTE B — USAR EL MODELO
-# ===============================
 
 model = None
 scaler = None
@@ -101,9 +96,7 @@ def detectar_descalibracion(nueva_lectura, mostrar_grafica=False):
 
     return True if pred == -1 else False
 
-# ===============================
 # BLOQUE PRINCIPAL: ENTRENAR + EJEMPLO
-# ===============================
 
 if __name__ == "__main__":
     print("\n--- ENTRENANDO MODELO ---")
