@@ -7,54 +7,62 @@ from sklearn.svm import OneClassSVM
 
 import matplotlib.pyplot as plt
 
+# —————————————————————————————
 # PARTE A — ENTRENAMIENTO
+
 
 def entrenar_y_guardar_modelo(ruta_csv,
                               nombre_modelo="model_descalibracion.pkl",
                               nombre_scaler="scaler_descalibracion.pkl",
                               nombre_media="mean_sensors.pkl"):
-    print("📌 Cargando dataset para entrenamiento...")
+    print("Cargando dataset para entrenamiento...")
     df = pd.read_csv(ruta_csv)
 
+    # Detectar columnas de temperatura automáticamente
     temp_cols = [col for col in df.columns if "TMP" in col and "R_SHTHTR" in col]
     print(f"🔎 Columnas de temperatura detectadas: {temp_cols}")
 
     data = df[temp_cols].copy()
     data = data.fillna(data.mean())
 
+    # Centrar (desviación respecto a media histórica)
     mean_per_sensor = data.mean()
     data_dev = data - mean_per_sensor
 
+    # Escalado
     scaler = StandardScaler()
     data_dev_scaled = scaler.fit_transform(data_dev)
 
+    # Entrenar OneClass SVM
     model = OneClassSVM(kernel="rbf", gamma="auto", nu=0.05)
     model.fit(data_dev_scaled)
 
+    # Guardar modelo + scaler + medias
     pickle.dump(model, open(nombre_modelo, "wb"))
     pickle.dump(scaler, open(nombre_scaler, "wb"))
     pickle.dump(mean_per_sensor, open(nombre_media, "wb"))
 
     print("✔ Modelo entrenado y parámetros guardados.")
 
-    # GRAFICA DEL ENTRENAMIENTO
-
+    # Gráfica de entrenamiento
     pred_train = model.predict(data_dev_scaled)
     anomalies_train = np.where(pred_train == -1)[0]
 
     plt.figure(figsize=(12,6))
-    plt.title("🟦 Entrenamiento - Detección de des-calibración (datos históricos)")
+    plt.title("Entrenamiento - Detección de des-calibración")
     plt.plot(df.index, data[temp_cols[0]], label=temp_cols[0], color="blue")
     plt.scatter(df.index[anomalies_train],
                 data[temp_cols[0]].iloc[anomalies_train],
-                color="red", marker="x", label="Puntos des-calibrados", alpha=0.6)
+                color="red", marker="x", label="Anomalías", alpha=0.6)
     plt.xlabel("Ciclo de inyección")
     plt.ylabel("Temperatura (°C)")
     plt.legend()
     plt.grid(True)
     plt.show()
 
-# PARTE B — USAR EL MODELO
+# —————————————————————————————
+# PARTE B — CARGAR MODELO
+
 
 model = None
 scaler = None
@@ -69,34 +77,66 @@ def cargar_modelo(nombre_modelo="model_descalibracion.pkl",
     scaler = pickle.load(open(nombre_scaler, "rb"))
     mean_per_sensor = pickle.load(open(nombre_media, "rb"))
 
-    print("📌 Modelo, scaler y medias cargados.")
+    print("Modelo, scaler y medias cargados.")
+
+# —————————————————————————————
+# DETECTAR DES-CALIBRACIÓN (INDIVIDUAL)
+
 
 def detectar_descalibracion(nueva_lectura, mostrar_grafica=False):
     if model is None or scaler is None or mean_per_sensor is None:
-        raise RuntimeError("❌ Modelo no cargado. Usa cargar_modelo() primero.")
+        raise RuntimeError("Modelo no cargado. Usa cargar_modelo() primero.")
 
+    # Crear DataFrame de 1 sola lectura
     df_new = pd.DataFrame([nueva_lectura])
     df_new = df_new.fillna(mean_per_sensor)
     df_new = df_new[mean_per_sensor.index]
 
+    # Desviación y escalado
     df_dev_new = df_new - mean_per_sensor
     X_scaled_new = scaler.transform(df_dev_new)
+
     pred = model.predict(X_scaled_new)[0]
 
+    # Mostrar gráfica si se pide
     if mostrar_grafica:
         plt.figure(figsize=(8,4))
-        plt.title("📊 Lectura nueva de temperatura")
-        plt.plot(df_new.columns, df_new.values.flatten(), 'o-', label="Temp observada")
-        plt.axhline(mean_per_sensor.values.mean(), color="black", linestyle="--", label="Media histórica (promedio)")
+        plt.title("📊 Lectura nueva de temperaturas")
+        plt.plot(df_new.columns, df_new.values.flatten(), 'o-', label="Temperaturas")
         plt.xticks(rotation=90)
         plt.ylabel("°C")
         plt.grid(True)
         plt.legend()
         plt.show()
 
-    return True if pred == -1 else False
+    return pred == -1  # True si descalibrado
 
-# BLOQUE PRINCIPAL: ENTRENAR + EJEMPLO
+# —————————————————————————————
+# NUEVA FUNCIÓN: PROBAR VARIAS LECTURAS DESDE CSV
+
+
+def probar_varias_desde_csv(ruta_csv_nuevas, mostrar_graficas=False):
+    """
+    Lee un **CSV** donde cada fila es una lectura
+    con las mismas columnas de sensores.
+    """
+    df_test = pd.read_csv(ruta_csv_nuevas)
+    resultados = []
+
+    for idx, fila in df_test.iterrows():
+        lectura = fila.to_dict()
+        es_descalibrado = detectar_descalibracion(lectura,
+                                                  mostrar_grafica=mostrar_graficas)
+        resultados.append({
+            "index": idx,
+            "descalibrado": es_descalibrado
+        })
+        estado = "DES-CALIBRADO" if es_descalibrado else "✔ NORMAL"
+        print(f"Fila {idx} → {estado}")
+
+    return pd.DataFrame(resultados)
+
+# BLOQUE PRINCIPAL
 
 if __name__ == "__main__":
     print("\n--- ENTRENANDO MODELO ---")
@@ -105,8 +145,7 @@ if __name__ == "__main__":
     print("\n--- CARGANDO MODELO ENTRENADO ---")
     cargar_modelo()
 
-    print("\n--- PROBANDO UNA NUEVA LECTURA ---")
-
+    print("\n--- PROBANDO UNA LECTURA INDIVIDUAL ---")
     ejemplo = {
         "R_SHTHTR01TMP": 219.9, "R_SHTHTR02TMP": 220.1,
         "R_SHTHTR03TMP": 220.2, "R_SHTHTR04TMP": 219.7,
@@ -129,6 +168,8 @@ if __name__ == "__main__":
 
     alerta = detectar_descalibracion(ejemplo, mostrar_grafica=True)
     if alerta:
-        print("🚨 ALERTA: Posible des-calibración detectada.")
+        print("ALERTA: Posible des-calibración detectada.")
     else:
         print("✔ Lectura normal.")
+
+
