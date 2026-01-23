@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import pickle
+import os
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import OneClassSVM
@@ -115,26 +116,31 @@ def detectar_descalibracion(nueva_lectura, mostrar_grafica=False):
 # NUEVA FUNCIÓN: PROBAR VARIAS LECTURAS DESDE CSV
 
 
+import os
+
 def probar_varias_desde_csv(ruta_csv_nuevas, mostrar_graficas=False):
-    """
-    Lee un **CSV** donde cada fila es una lectura
-    con las mismas columnas de sensores.
-    """
+    """Lee un CSV y evalúa si cada fila está descalibrada."""
+    if not isinstance(ruta_csv_nuevas, str) or not os.path.isfile(ruta_csv_nuevas):
+        print(f"❌ ERROR: '{ruta_csv_nuevas}' no es un archivo válido.")
+        return None
+
     df_test = pd.read_csv(ruta_csv_nuevas)
     resultados = []
 
     for idx, fila in df_test.iterrows():
         lectura = fila.to_dict()
-        es_descalibrado = detectar_descalibracion(lectura,
-                                                  mostrar_grafica=mostrar_graficas)
+        es_descalibrado = detectar_descalibracion(lectura, mostrar_grafica=mostrar_graficas)
+
         resultados.append({
             "index": idx,
             "descalibrado": es_descalibrado
         })
-        estado = "DES-CALIBRADO" if es_descalibrado else "✔ NORMAL"
+
+        estado = "❌ DES-CALIBRADO" if es_descalibrado else "✔ NORMAL"
         print(f"Fila {idx} → {estado}")
 
     return pd.DataFrame(resultados)
+
 
 # BLOQUE PRINCIPAL
 
@@ -167,9 +173,18 @@ if __name__ == "__main__":
     }
 
     alerta = detectar_descalibracion(ejemplo, mostrar_grafica=True)
+
+    resultados = probar_varias_desde_csv("nuevas_temperaturas.csv", mostrar_graficas=True)
+    print(resultados)
+
     if alerta:
         print("ALERTA: Posible des-calibración detectada.")
     else:
         print("✔ Lectura normal.")
+
+        
+    print("\n--- PROBANDO VARIAS LECTURAS DESDE CSV ---")
+    resultados = probar_varias_desde_csv("nuevas_temperaturas.csv", mostrar_graficas=False)
+    print(resultados)
 
 
