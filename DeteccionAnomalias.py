@@ -4,39 +4,79 @@ from sklearn.svm import OneClassSVM
 import matplotlib.pyplot as plt
 import numpy as np
 
-# 1️⃣ Cargar el dataset
+# —————————————————————————————
+# CARGAR DATASET Y ENTRENAR MODELO
+
 df = pd.read_csv("molding_machine.csv")
 
-# 2️⃣ Seleccionar solo las columnas de temperatura
 temp_cols = [col for col in df.columns if "R_SHTHTR" in col and "TMP" in col]
-data = df[temp_cols].dropna()  # eliminar filas con NaN
+data = df[temp_cols].dropna()
 
-# 3️⃣ Escalar los datos (muy importante)
 scaler = StandardScaler()
 data_scaled = scaler.fit_transform(data)
 
-# 4️⃣ Entrenar modelo de detección de anomalías
 model = OneClassSVM(kernel='rbf', gamma=0.001, nu=0.05)
 model.fit(data_scaled)
 
-# 5️⃣ Predicción (1 = normal, -1 = anomalía)
-pred = model.predict(data_scaled)
+print("\n✔ Modelo de detección de anomalías entrenado con éxito.")
 
-# 6️⃣ Agregar columna de resultado
-df_result = data.copy()
-df_result["anomalía"] = np.where(pred == -1, "Sí", "No")
+# —————————————————————————————
+# CALCULAR MEDIA HISTÓRICA (para completar entradas)
 
-# 7️⃣ Visualizar resultados (ejemplo con una zona del molde)
-plt.figure(figsize=(10,5))
-plt.plot(data[temp_cols[0]], label='Temperatura', color='blue')
-plt.scatter(df_result.index[df_result["anomalía"]=="Sí"],
-            data[temp_cols[0]][df_result["anomalía"]=="Sí"],
-            color='red', label='Anomalía')
-plt.title(f"Detección de anomalías en {temp_cols[0]}")
-plt.xlabel("Ciclo de inyección")
+
+mean_per_sensor = data.mean()
+
+# —————————————————————————————
+# FUNCIÓN INTERACTIVA: INGRESAR 3 NUEVAS TEMPERATURAS
+
+
+def probar_temperaturas():
+    print("\n👉 Ingresa valores de temperatura nuevos:")
+
+    nueva_lectura = {}
+
+    # Tomamos los primeros 3 sensores para pedir valores:
+    sensores = temp_cols[:3]
+
+    for sensor in sensores:
+        while True:
+            try:
+                valor = float(input(f"Ingrese valor para {sensor}: "))
+                nueva_lectura[sensor] = valor
+                break
+            except ValueError:
+                print("❌ Entrada inválida. Ingresa un número válido.")
+
+    # Completar el resto con la media histórica
+    for sensor in temp_cols[3:]:
+        nueva_lectura[sensor] = mean_per_sensor[sensor]
+
+    return nueva_lectura
+
+# —————————————————————————————
+# PREDICCIÓN CON LOS 3 VALORES
+
+
+nueva = probar_temperaturas()
+
+# Transformar la entrada igual que en entrenamiento
+df_new = pd.DataFrame([nueva])
+df_new_scaled = scaler.transform(df_new)
+
+pred = model.predict(df_new_scaled)[0]
+
+if pred == -1:
+    print("\n🚨 ALERTA: La lectura es una **anomalía**.")
+else:
+    print("\n✔ Lectura normal.")
+
+# Grafica
+plt.figure(figsize=(8,4))
+plt.plot(temp_cols, df_new.values.flatten(), 'o-', label="Temp ingresadas + medias")
+plt.xticks(rotation=90)
 plt.ylabel("Temperatura (°C)")
+plt.title("Temperaturas de prueba (completadas con media histórica)")
+plt.grid(True)
 plt.legend()
 plt.show()
 
-# 8️⃣ Mostrar resumen
-print(df_result["anomalía"].value_counts())
