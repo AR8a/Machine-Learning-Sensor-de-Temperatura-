@@ -1,148 +1,137 @@
 import pandas as pd
 import numpy as np
 import pickle
-import os
+import matplotlib.pyplot as plt
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import OneClassSVM
 
-import matplotlib.pyplot as plt
+# CONFIGURACIÓN
 
-# —————————————————————————————
-# PARTE A — ENTRENAMIENTO
-# —————————————————————————————
+SENSORES_USADOS = [
+    "R_SHTHTR29TMP",
+    "R_SHTHTR30TMP",
+    "R_SHTHTR31TMP"
+]
 
-def entrenar_y_guardar_modelo(ruta_csv,
-                              nombre_modelo="model_descalibracion.pkl",
-                              nombre_scaler="scaler_descalibracion.pkl",
-                              nombre_media="mean_sensors.pkl"):
-    print("📌 Cargando dataset para entrenamiento...")
+MODELO_FILE = "model_descalibracion.pkl"
+SCALER_FILE = "scaler_descalibracion.pkl"
+MEDIA_FILE  = "mean_sensors.pkl"
+
+# ENTRENAMIENTO
+
+def entrenar_y_guardar_modelo(ruta_csv):
+    print("📌 Cargando dataset...")
     df = pd.read_csv(ruta_csv)
 
-    temp_cols = [col for col in df.columns if "TMP" in col and "R_SHTHTR" in col]
-    print(f"🔎 Columnas de temperatura detectadas: {temp_cols}")
+    data = df[SENSORES_USADOS].dropna()
 
-    data = df[temp_cols].copy()
-    data = data.fillna(data.mean())
-
+    # Media histórica (referencia de calibración)
     mean_per_sensor = data.mean()
+
+    # Desviación respecto a la media → des-calibración
     data_dev = data - mean_per_sensor
 
     scaler = StandardScaler()
     data_dev_scaled = scaler.fit_transform(data_dev)
 
-    model = OneClassSVM(kernel="rbf", gamma="auto", nu=0.05)
+    model = OneClassSVM(
+        kernel="rbf",
+        gamma="auto",
+        nu=0.05
+    )
     model.fit(data_dev_scaled)
 
-    pickle.dump(model, open(nombre_modelo, "wb"))
-    pickle.dump(scaler, open(nombre_scaler, "wb"))
-    pickle.dump(mean_per_sensor, open(nombre_media, "wb"))
+    # Guardar artefactos
+    pickle.dump(model, open(MODELO_FILE, "wb"))
+    pickle.dump(scaler, open(SCALER_FILE, "wb"))
+    pickle.dump(mean_per_sensor, open(MEDIA_FILE, "wb"))
 
-    print("✔ Modelo entrenado y parámetros guardados.")
+    print("✔ Modelo de des-calibración entrenado y guardado.")
 
-    pred_train = model.predict(data_dev_scaled)
-    anomalies_train = np.where(pred_train == -1)[0]
+    # Visualización de entrenamiento
+    pred = model.predict(data_dev_scaled)
+    anomalies = np.where(pred == -1)[0]
 
-    plt.figure(figsize=(12,6))
-    plt.title("Entrenamiento - Detección de Des-calibración")
-    plt.plot(df.index, data[temp_cols[0]], label=temp_cols[0], color="blue")
-    plt.scatter(df.index[anomalies_train],
-                data[temp_cols[0]].iloc[anomalies_train],
-                color="red", marker="x", label="Anomalías")
+    plt.figure(figsize=(10,5))
+    plt.plot(data.index, data[SENSORES_USADOS[0]], label=SENSORES_USADOS[0])
+    plt.scatter(
+        data.index[anomalies],
+        data[SENSORES_USADOS[0]].iloc[anomalies],
+        color="red",
+        marker="x",
+        label="Des-calibración"
+    )
+    plt.title("Entrenamiento – Detección de des-calibración")
     plt.xlabel("Ciclo")
-    plt.ylabel("Temperatura")
+    plt.ylabel("Temperatura (°C)")
     plt.legend()
     plt.grid(True)
     plt.show()
 
-# —————————————————————————————
-# PARTE B — CARGAR MODELO
-# —————————————————————————————
+# CARGAR MODELO
 
 model = None
 scaler = None
 mean_per_sensor = None
 
-def cargar_modelo(nombre_modelo="model_descalibracion.pkl",
-                  nombre_scaler="scaler_descalibracion.pkl",
-                  nombre_media="mean_sensors.pkl"):
+def cargar_modelo():
     global model, scaler, mean_per_sensor
 
-    model = pickle.load(open(nombre_modelo, "rb"))
-    scaler = pickle.load(open(nombre_scaler, "rb"))
-    mean_per_sensor = pickle.load(open(nombre_media, "rb"))
+    model = pickle.load(open(MODELO_FILE, "rb"))
+    scaler = pickle.load(open(SCALER_FILE, "rb"))
+    mean_per_sensor = pickle.load(open(MEDIA_FILE, "rb"))
 
-    print("📌 Modelo cargado.")
+    print("📌 Modelo cargado correctamente.")
 
-# —————————————————————————————
-# DETECTAR DES-CALIBRACIÓN (1 Lectura)
-# —————————————————————————————
+# DETECCIÓN DE DES-CALIBRACIÓN (UNA LECTURA)
 
-def detectar_descalibracion(nueva_lectura, mostrar_grafica=False):
-    if model is None or scaler is None or mean_per_sensor is None:
-        raise RuntimeError("Modelo no cargado. Usa cargar_modelo() primero.")
-
+def detectar_descalibracion(nueva_lectura, mostrar_grafica=True):
     df_new = pd.DataFrame([nueva_lectura])
-    df_new = df_new.fillna(mean_per_sensor)
-    df_new = df_new[mean_per_sensor.index]
 
-    df_dev_new = df_new - mean_per_sensor
-    X_scaled_new = scaler.transform(df_dev_new)
+    # Desviación respecto a la referencia
+    df_dev = df_new - mean_per_sensor
+    X_scaled = scaler.transform(df_dev)
 
-    pred = model.predict(X_scaled_new)[0]
+    pred = model.predict(X_scaled)[0]
 
     if mostrar_grafica:
-        plt.figure(figsize=(8,4))
-        plt.plot(df_new.columns, df_new.values.flatten(), 'o-', label="Temp observada")
-        plt.xticks(rotation=90)
+        plt.figure(figsize=(7,4))
+        plt.plot(df_new.columns, df_new.values.flatten(), 'o-')
+        plt.ylabel("Temperatura (°C)")
+        plt.title("Lectura ingresada")
         plt.grid(True)
-        plt.legend()
         plt.show()
 
     return pred == -1
 
-# —————————————————————————————
-# FUNCIÓN INTERACTIVA PARA INGRESAR LECTURA
-# —————————————————————————————
+# ENTRADA POR TECLADO
 
 def pedir_temperaturas():
-    """
-    Pide 3 temperaturas al usuario y las pasa al modelo
-    para detectar des-calibracion.
-    """
-    sensores = list(mean_per_sensor.index[:3])  # tomar 3 columnas de sensores
-
-    print("\n👉 Ingresa 3 nuevas temperaturas:")
+    print("\n👉 Ingresa las temperaturas:")
 
     nueva_lectura = {}
-    for sensor in sensores:
+
+    for sensor in SENSORES_USADOS:
         while True:
             try:
-                valor = float(input(f"Ingrese valor para {sensor}: "))
-                nueva_lectura[sensor] = valor
+                nueva_lectura[sensor] = float(
+                    input(f"Ingrese valor para {sensor}: ")
+                )
                 break
             except ValueError:
-                print("❌ Entrada inválida. Ingresa un número.")
+                print("❌ Ingresa un número válido.")
 
-    # Completar el resto de sensores con la media histórica
-    for sensor in mean_per_sensor.index[3:]:
-        nueva_lectura[sensor] = mean_per_sensor[sensor]
+    return nueva_lectura
 
-    alerta = detectar_descalibracion(nueva_lectura)
-    return alerta
-
-# —————————————————————————————
-# BLOQUE PRINCIPAL
-# —————————————————————————————
+# MAIN
 
 if __name__ == "__main__":
-    print("\n--- ENTRENANDO MODELO ---")
     entrenar_y_guardar_modelo("molding_machine.csv")
-
-    print("\n--- CARGANDO MODELO ENTRENADO ---")
     cargar_modelo()
 
-    alerta = pedir_temperaturas()
+    lectura = pedir_temperaturas()
+    alerta = detectar_descalibracion(lectura)
 
     if alerta:
         print("\n🚨 ALERTA: Posible des-calibración detectada.")
